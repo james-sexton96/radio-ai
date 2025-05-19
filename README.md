@@ -13,5 +13,7 @@ All services are containerized using Docker.
 
 ## Project Status
 
-Initializing project structure and setting up foundational services.
+Initializing project structure and setting up foundational services. 
+There is some test data, including a non-related image for initial tests with multimodal reasoning. 
+Dockerized Ollama is the current backend but planning future work to create more open ended connections (OpenAI, Gemini, other endpoints).
 
