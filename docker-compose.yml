@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  frontend:
+    build: ./frontend
+    container_name: neurorad_frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      pocketbase: # Changed from array to map for healthcheck condition
+        condition: service_healthy # Frontend will wait for pocketbase to be healthy
+    environment:
+      - NEXT_PUBLIC_POCKETBASE_URL=http://localhost:8090
+      # For server-side (API routes) in Next.js to connect to Pocketbase:
+      - POCKETBASE_INTERNAL_URL=http://pocketbase:8090
+      # For server-side (API routes) in Next.js to connect to LLM service:
+      - OLLAMA_INTERNAL_URL=http://llm_service:11434
+
+  pocketbase:
+    build: ./pocketbase
+    container_name: neurorad_pocketbase
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./pocketbase/pb_data:/pb_data
+      - ./pocketbase/pb_migrations:/pb_migrations
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8090/api/health || exit 1"] # Ensure it exits with 1 on failure
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s # Optional: give some startup time before first healthcheck
+
+  llm_service:
+    build: ./llm_service # Instructs Docker Compose to build from ./llm_service directory
+    container_name: neurorad_llm
+    ports:
+      - "11434:11434" # Standard Ollama port
+    volumes:
+      - ollama_data:/root/.ollama # Persist Ollama models and data using a named volume
+    # --- GPU Acceleration (Optional) ---
+    # Uncomment the following lines if you have an NVIDIA GPU and want Ollama to use it.
+    # Ensure you have the NVIDIA Container Toolkit installed on your Docker host.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1 # Or 'all'
+    #           capabilities: [gpu]
+    # --- End GPU Acceleration ---
+    healthcheck: # Optional: Add a basic healthcheck for Ollama
+      test: ["CMD-SHELL", "ollama list > /dev/null 2>&1 || exit 1"] # Check if ollama list runs, suppress output
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s # Give Ollama time to start, especially if it'sdocker-compose config pulling a model for the first time
+
+volumes: # Define the named volume for Ollama
+  ollama_data: {} # The empty braces are a valid way to define a volume managed by Docker
+
+# Networks can be defined here if needed for more complex setups
+# networks:
+#   app_network:
+#     driver: bridge
