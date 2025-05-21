@@ -11,3 +11,5 @@ FROM ollama/ollama:latest
 
 # For now, a simple FROM statement is sufficient.
 # The service will be configured further via docker-compose.yml.
+
+# Removed the `RUN ollama pull` command to avoid build-time dependency on the running Ollama app

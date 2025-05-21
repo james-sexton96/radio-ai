@@ -45,25 +45,16 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         model: model,
         prompt: prompt,
-        stream: false, // For MVP, start with non-streamed response
+        stream: true, // Enable streaming response from Ollama
       }),
     });
 
-    // Check if the request to Ollama was successful
-    if (!ollamaResponse.ok) {
-      const errorBody = await ollamaResponse.text(); // Get error details from Ollama
-      console.error(`Ollama service error: ${ollamaResponse.status}`, errorBody);
-      return NextResponse.json(
-        { error: `Failed to get response from LLM service. Status: ${ollamaResponse.status}`, details: errorBody },
-        { status: ollamaResponse.status }
-      );
-    }
-
-    // Parse the JSON response from Ollama
-    const ollamaData = await ollamaResponse.json();
-
-    // Return the Ollama's response to the client
-    return NextResponse.json(ollamaData, { status: 200 });
+    // Stream the response back to the client
+    const { readable, writable } = new TransformStream();
+    ollamaResponse.body?.pipeTo(writable);
+    return new NextResponse(readable, {
+      headers: ollamaResponse.headers,
+    });
 
   } catch (error: unknown) { // Changed 'any' to 'unknown'
     console.error("Error in /api/llm/interact:", error);

@@ -41,13 +41,13 @@ services:
     # --- GPU Acceleration (Optional) ---
     # Uncomment the following lines if you have an NVIDIA GPU and want Ollama to use it.
     # Ensure you have the NVIDIA Container Toolkit installed on your Docker host.
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1 # Or 'all'
-    #           capabilities: [gpu]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1 # Or 'all'
+              capabilities: [gpu]
     # --- End GPU Acceleration ---
     healthcheck: # Optional: Add a basic healthcheck for Ollama
       test: ["CMD-SHELL", "ollama list > /dev/null 2>&1 || exit 1"] # Check if ollama list runs, suppress output

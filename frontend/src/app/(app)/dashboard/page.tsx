@@ -1,17 +1,83 @@
 // File: frontend/src/app/(app)/dashboard/page.tsx
 "use client"; // This page uses client-side hooks for auth state and actions
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation'; // For redirecting after logout
+import { askLlm, askLlmStream } from '@/lib/ollamaClient';
+import ChatMessage from '@/components/chat/ChatMessage';
+import ImageUploader from '@/components/core/ImageUploader';
+
+// Temporarily disable the ESLint rule for unused variables
+/* eslint-disable @typescript-eslint/no-unused-vars */
 
 export default function DashboardPage() {
   const { user, logout, isLoading } = useAuth();
   const router = useRouter();
+  const [result, setResult] = useState('');
+  const [messages, setMessages] = useState<{ sender: 'user' | 'ai'; text: string }[]>([]);
+  const [inputText, setInputText] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   const handleLogout = () => {
     logout();
     router.replace('/login'); // Redirect to login page after logout
+  };
+
+  const handleTest = async () => {
+    setLoading(true);
+    try {
+      const res = await askLlm('Hello', 'gemma3:27b-it-qat');
+      setResult(JSON.stringify(res));
+    } catch (e) {
+      setResult('Error: ' + (e as Error).message);
+    }
+    setLoading(false);
+  };
+
+  const handleSendMessage = async () => {
+    if (!inputText.trim()) return;
+
+    const userMessage: { sender: 'user'; text: string } = { sender: 'user', text: inputText };
+    setMessages((prev) => [...prev, userMessage]);
+    setInputText('');
+    setLoading(true);
+
+    try {
+      // Add a placeholder AI message
+      setMessages((prev) => [...prev, { sender: 'ai', text: '' }]);
+
+      let lastChunk = '';
+      await askLlmStream(inputText, 'gemma3:27b-it-qat', (chunk) => {
+        setMessages((prev) => {
+          const updatedMessages = [...prev];
+          const lastMessage = updatedMessages[updatedMessages.length - 1];
+          if (lastMessage?.sender === 'ai') {
+            // Append only new content, ensuring spaces are preserved
+            const newContent = chunk.startsWith(lastChunk) ? chunk.slice(lastChunk.length) : chunk;
+            lastMessage.text += (lastMessage.text.endsWith(' ') ? '' : ' ') + newContent;
+            lastChunk = chunk; // Update the last chunk
+          }
+          return updatedMessages;
+        });
+      });
+    } catch (error) {
+      const errorMessage: { sender: 'ai'; text: string } = {
+        sender: 'ai',
+        text: 'Error: Unable to get a response from the AI.',
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleImageSelect = (file: File) => {
+    setSelectedImage(file);
+    const previewUrl = URL.createObjectURL(file);
+    setImagePreview(previewUrl);
   };
 
   if (isLoading) {
@@ -56,8 +122,16 @@ export default function DashboardPage() {
           <div className="bg-white p-4 sm:p-6 rounded-lg shadow-lg flex-grow flex flex-col">
             <h2 className="text-xl font-semibold text-gray-700 mb-4">Image Analysis</h2>
             <div className="flex-grow border-2 border-dashed border-gray-300 rounded-md flex items-center justify-center text-gray-400">
-              {/* Content for image display/uploader will go here */}
-              <p>Image Preview / Upload Area</p>
+              {/* Image Analysis Box */}
+              {imagePreview ? (
+                <img src={imagePreview} alt="Selected Preview" className="rounded-md shadow-md max-w-full h-auto" />
+              ) : (
+                <p>No image selected</p>
+              )}
+            </div>
+            {/* Upload Button */}
+            <div className="mt-4 flex justify-center">
+              <ImageUploader onImageSelect={handleImageSelect} />
             </div>
           </div>
            {/* Report Display Area (Placeholder for later) */}
@@ -74,34 +148,50 @@ export default function DashboardPage() {
           <h2 className="text-xl font-semibold text-gray-700 mb-4">AI Chat Assistant</h2>
           {/* Chat Messages Area */}
           <div className="flex-grow border border-gray-300 rounded-md p-3 overflow-y-auto mb-4 min-h-[200px] sm:min-h-[300px]">
-            {/* Placeholder for chat messages */}
-            <div className="text-gray-400 text-center py-10">Chat messages will appear here...</div>
-            {/* Example messages:
-            <div className="mb-2">
-              <p className="bg-indigo-500 text-white rounded-lg py-2 px-4 inline-block">Hello AI!</p>
-            </div>
-            <div className="mb-2 text-right">
-              <p className="bg-gray-200 text-gray-800 rounded-lg py-2 px-4 inline-block">Hello User! How can I help you with the scan?</p>
-            </div>
-            */}
+            {messages.length === 0 ? (
+              <div className="text-gray-400 text-center py-10">Chat messages will appear here...</div>
+            ) : (
+              messages.map((message, index) => (
+                <ChatMessage key={index} sender={message.sender} text={message.text} />
+              ))
+            )}
           </div>
           {/* Chat Input Field */}
-          <div className="mt-auto"> {/* Pushes input to the bottom */}
+          <div className="mt-auto">
             <div className="flex gap-2">
               <input
                 type="text"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
                 placeholder="Type your message to the AI..."
                 className="flex-grow rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2"
+                disabled={loading}
               />
               <button
+                onClick={handleSendMessage}
                 className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-md shadow-sm"
+                disabled={loading}
               >
-                Send
+                {loading ? 'Sending...' : 'Send'}
               </button>
             </div>
           </div>
         </div>
       </main>
+
+      {/* Test LLM Button and Result Display - Temporary addition */}
+      <div className="fixed bottom-4 right-4 bg-white p-4 rounded-lg shadow-md">
+        <button
+          onClick={handleTest}
+          disabled={loading}
+          className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-md"
+        >
+          {loading ? 'Testing...' : 'Test LLM'}
+        </button>
+        <div className="mt-2 text-sm text-gray-600">
+          {result && <p>Result: {result}</p>}
+        </div>
+      </div>
 
       {/* Footer (optional, can be removed if main content needs full height) */}
       {/* <footer className="bg-gray-200 text-center p-3 text-sm text-gray-600">
